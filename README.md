@@ -16,6 +16,16 @@
 3. [Task 2 — Make It Not Lie (Evaluation & Edge Cases)](#3-task-2--make-it-not-lie)
 4. [Task 3 — Backend Track (Surviving 50 Tickets/Sec During Outages)](#4-task-3--backend-track-surviving-50-ticketssecond-during-an-outage)
 5. [Task 4 — How We Used AI](#5-task-4--how-we-used-ai)
+6. [Deep-Dive Documentation Suite (`docs/`)](#deep-dive-documentation-suite)
+
+---
+
+### Deep-Dive Documentation Suite
+For extended engineering, security, and operational documentation, see the [`docs/`](./docs) directory:
+- 🏛️ **[System Architecture & Invariants](./docs/ARCHITECTURE.md)**: Deep dive into the 5 defense layers, sequence diagrams, and fact-sheet injection.
+- 📡 **[REST API Specification](./docs/API_SPEC.md)**: OpenAPI endpoints, JSON schemas, headers, error codes, and curl examples.
+- 🛡️ **[Security, Privacy & Compliance Guide](./docs/SECURITY_AND_PII.md)**: Threat model, prompt injection defense, and Indian PII scrubbing engine.
+- 🚨 **[3 AM On-Call Runbook](./docs/RUNBOOK.md)**: Incident response playbooks, `policy_rule_id` diagnostic matrix, and log correlation.
 
 ---
 
