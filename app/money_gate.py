@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import re
 from typing import List, Optional, Tuple
 
+from app.billing_context import compute_billing_facts
 from app.config import settings
 from app.logger import log_event
 from app.schemas import (
@@ -148,59 +149,54 @@ def evaluate_refund_policy(
             reason="No refund requested.",
         )
 
-    # Examine billing history
-    sorted_renewals = _get_sorted_renewals(ticket.purchases)
-    if not sorted_renewals:
+    # Examine billing history via deterministic fact sheet
+    facts = compute_billing_facts(ticket)
+
+    # If no renewal records at all
+    has_renewals = any(p.type == PurchaseType.RENEWAL for p in ticket.purchases)
+    if not has_renewals:
         return RefundDecision(
             approved=False,
             amount_inr=0,
             reason="No renewal records found for this account.",
         )
 
-    latest_renewal = sorted_renewals[0]
-
     # Rule 4: Unsettled / Pending Payments (e.g., status == "initiated" like T-1005)
-    if latest_renewal.status == PurchaseStatus.INITIATED:
+    if facts.has_unsettled_payment_claim:
         return RefundDecision(
             approved=False,
             amount_inr=0,
-            payment_id=latest_renewal.id,
+            payment_id=facts.pending_initiated_ids[0] if facts.pending_initiated_ids else None,
             reason="Payment is in 'initiated' (unsettled) state; cannot refund unsettled funds. Escalated for payment reconciliation.",
         )
 
     # Rule 5: False Double-Charge Claims (e.g., T-1009: 1 failed, 1 successful)
-    successful_renewals = [r for r in sorted_renewals if r.status == PurchaseStatus.SUCCESSFUL]
-    failed_renewals = [r for r in sorted_renewals if r.status == PurchaseStatus.FAILED]
-
-    # If user alleges double charge, check actual successful count on same day/recent window
     if "double" in ticket.subject.lower() or "twice" in ticket.body.lower():
-        if len(successful_renewals) <= 1 and len(failed_renewals) >= 1:
+        if facts.has_false_double_charge_pattern:
             return RefundDecision(
                 approved=False,
                 amount_inr=0,
-                payment_id=successful_renewals[0].id if successful_renewals else None,
+                payment_id=facts.latest_settled_renewal_id,
                 reason="Only one successful charge found; prior attempt failed and was not settled.",
             )
 
     # If no successful renewal exists at all
-    if not successful_renewals:
+    if facts.settled_renewal_count == 0:
         return RefundDecision(
             approved=False,
             amount_inr=0,
             reason="No successful renewal transaction found eligible for refund.",
         )
 
-    latest_successful = successful_renewals[0]
-
     # Rule 6: High-Value Annual Plan Gate (> AUTO_REFUND_MAX_INR, e.g. Rs 1499 in T-1006)
-    if latest_successful.amount_inr > AUTO_REFUND_MAX_INR:
+    if facts.latest_settled_renewal_inr > AUTO_REFUND_MAX_INR:
         if ticket.app_opens_since_renewal == 0:
             return RefundDecision(
                 approved=False,
                 amount_inr=0,
-                payment_id=latest_successful.id,
+                payment_id=facts.latest_settled_renewal_id,
                 reason=(
-                    f"Eligible unused annual renewal (0 opens), but amount Rs {latest_successful.amount_inr} "
+                    f"Eligible unused annual renewal (0 opens), but amount Rs {facts.latest_settled_renewal_inr} "
                     f"exceeds auto-refund cap (Rs {AUTO_REFUND_MAX_INR}); routed for 1-click human approval."
                 ),
             )
@@ -208,7 +204,7 @@ def evaluate_refund_policy(
             return RefundDecision(
                 approved=False,
                 amount_inr=0,
-                payment_id=latest_successful.id,
+                payment_id=facts.latest_settled_renewal_id,
                 reason=(
                     f"Annual renewal with {ticket.app_opens_since_renewal} app opens; "
                     "requires human review."
@@ -216,30 +212,28 @@ def evaluate_refund_policy(
             )
 
     # Rule 7: Usage and Time Window Gate on Monthly Renewal (Rs 249)
-    # Check elapsed time between renewal charge and ticket receipt
-    time_delta = ticket.received_at - latest_successful.at
-    elapsed_hours = time_delta.total_seconds() / 3600.0
+    elapsed_hours = facts.hours_since_latest_settled_renewal or 0.0
 
     if ticket.app_opens_since_renewal == 0:
         if elapsed_hours <= REFUND_WINDOW_HOURS:
             return RefundDecision(
                 approved=True,
-                amount_inr=latest_successful.amount_inr,
-                payment_id=latest_successful.id,
+                amount_inr=facts.latest_settled_renewal_inr,
+                payment_id=facts.latest_settled_renewal_id,
                 reason="Approved: unused monthly renewal (0 app opens) reported within 48h window.",
             )
         else:
             return RefundDecision(
                 approved=False,
                 amount_inr=0,
-                payment_id=latest_successful.id,
+                payment_id=facts.latest_settled_renewal_id,
                 reason=f"Auto-refund window expired ({elapsed_hours:.1f}h elapsed, max {REFUND_WINDOW_HOURS}h); routed to human agent.",
             )
     else:
         return RefundDecision(
             approved=False,
             amount_inr=0,
-            payment_id=latest_successful.id,
+            payment_id=facts.latest_settled_renewal_id,
             reason=f"Auto-refund declined: {ticket.app_opens_since_renewal} app opens recorded since renewal; routed to human agent.",
         )
 

@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 from typing import Any, Dict, Optional
 
+from app.billing_context import compute_billing_facts
 from app.config import settings
 from app.logger import log_event, logger
 from app.schemas import (
@@ -120,14 +121,17 @@ class TriageLLMClient:
         return self._fixtures
 
     def format_ticket_prompt(self, ticket: TicketInput) -> str:
-        """Construct the prompt with ticket data enclosed in <untrusted_ticket> safety tags."""
+        """Construct the prompt with verified billing facts and untrusted ticket content."""
         purchases_summary = [
             f"ID: {p.id}, Type: {p.type.value}, Amount: Rs {p.amount_inr}, Status: {p.status.value}, At: {p.at.isoformat()}"
             for p in ticket.purchases
         ]
         purchases_str = "\n".join(purchases_summary) if purchases_summary else "None"
+        billing_facts = compute_billing_facts(ticket)
 
-        return f"""<untrusted_ticket>
+        return f"""{billing_facts.to_prompt_block()}
+
+<untrusted_ticket>
 Ticket ID: {ticket.id}
 Received At: {ticket.received_at.isoformat()}
 Subject: {ticket.subject}
@@ -138,7 +142,7 @@ Billing Record:
 {purchases_str}
 </untrusted_ticket>
 
-Classify this ticket according to the required JSON schema.
+Classify this ticket according to the required JSON schema. Rely on <verified_billing_facts> for all payment reality.
 """
 
     def _call_provider(self, system_prompt: str, user_prompt: str) -> str:
