@@ -136,6 +136,41 @@ class RefundDecision(BaseModel):
     )
 
 
+class AuditTrace(BaseModel):
+    """
+    Detailed provenance trace for 3 AM debugging and regulatory accountability.
+    Tracks model execution metadata, attempts, original intentions, and deterministic overrides.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    trace_id: str = Field(
+        description="Correlation ID linking the request to logs and DB records (e.g. tr_<ticket_id>_<short_hash>)"
+    )
+    execution_mode: str = Field(
+        description="Execution mode used: replay, live, or degraded_fallback"
+    )
+    llm_attempts: int = Field(
+        default=1,
+        ge=1,
+        le=2,
+        description="Total attempts made to invoke the LLM and parse valid JSON (1 or 2 if retried)",
+    )
+    llm_suggested_refund: bool = Field(
+        description="Whether the LLM originally recommended or detected a refund request"
+    )
+    money_gate_override: bool = Field(
+        description="True if the deterministic money gate overridden the LLM recommendation"
+    )
+    policy_rule_id: str = Field(
+        description="Identifier of the specific deterministic rule code that decided the refund"
+    )
+    security_flags: List[str] = Field(
+        default_factory=list,
+        description="Security and policy flags raised during triage (e.g. PROMPT_INJECTION_DETECTED)",
+    )
+
+
 class TriageResponse(BaseModel):
     """Final response schema returned by POST /triage."""
 
@@ -151,6 +186,9 @@ class TriageResponse(BaseModel):
         ge=0.0,
         le=1.0,
         description="Model confidence score in range [0.0, 1.0]",
+    )
+    audit_trace: AuditTrace = Field(
+        description="Provenance trace for auditability and 3 AM debugging"
     )
 
 
@@ -188,4 +226,14 @@ class LLMTriageDraft(BaseModel):
     )
     reasoning: str = Field(
         description="Internal model reasoning explaining category and severity choices"
+    )
+    execution_mode: str = Field(
+        default="replay",
+        description="Execution mode: replay, live, or degraded_fallback",
+    )
+    llm_attempts: int = Field(
+        default=1,
+        ge=1,
+        le=2,
+        description="Number of attempts required to produce valid JSON",
     )

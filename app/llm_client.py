@@ -99,6 +99,8 @@ def build_degraded_fallback(ticket: TicketInput, error_reason: str) -> LLMTriage
         confidence=0.0,
         prompt_injection_detected=False,
         reasoning=f"Degraded fallback engaged due to LLM provider/validation failure: {error_reason}",
+        execution_mode="degraded_fallback",
+        llm_attempts=2,
     )
 
 
@@ -200,7 +202,10 @@ Classify this ticket according to the required JSON schema. Rely on <verified_bi
             fixtures = self._load_fixtures()
             if ticket.id in fixtures:
                 log_event("llm_replay_cache_hit", ticket.id)
-                return LLMTriageDraft.model_validate(fixtures[ticket.id])
+                draft = LLMTriageDraft.model_validate(fixtures[ticket.id])
+                draft.execution_mode = "replay"
+                draft.llm_attempts = 1
+                return draft
             else:
                 log_event("llm_replay_fallback_used", ticket.id)
                 return build_degraded_fallback(
@@ -223,6 +228,8 @@ Classify this ticket according to the required JSON schema. Rely on <verified_bi
 
                 raw_output = self._call_provider(SYSTEM_PROMPT, current_prompt)
                 parsed_dict = extract_json_from_text(raw_output)
+                parsed_dict["execution_mode"] = "live"
+                parsed_dict["llm_attempts"] = attempt
                 validated_draft = LLMTriageDraft.model_validate(parsed_dict)
                 log_event("llm_response_validated", ticket.id, attempt=attempt)
                 return validated_draft

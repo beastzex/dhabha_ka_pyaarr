@@ -50,6 +50,7 @@ def evaluate_all() -> None:
                 "reply_draft": triage_resp.reply_draft,
                 "needs_human": triage_resp.needs_human,
                 "confidence": triage_resp.confidence,
+                "audit_trace": triage_resp.audit_trace.model_dump(),
             }
 
     # 1. Output Markdown Table
@@ -65,6 +66,8 @@ def evaluate_all() -> None:
         "Amount",
         "Human",
         "Conf",
+        "Policy Rule ID",
+        "Override",
         "Key Decision Reason",
     ]
 
@@ -80,9 +83,11 @@ def evaluate_all() -> None:
         amount_str = f"Rs {res.refund.amount_inr}" if res.refund.approved else "Rs 0"
         human_str = "Yes" if res.needs_human else "No"
         conf_str = f"{res.confidence:.2f}"
+        rule_str = res.audit_trace.policy_rule_id
+        override_str = "YES" if res.audit_trace.money_gate_override else "No"
         reason_short = res.refund.reason.split(";")[0].replace("\n", " ")
-        if len(reason_short) > 60:
-            reason_short = reason_short[:57] + "..."
+        if len(reason_short) > 40:
+            reason_short = reason_short[:37] + "..."
 
         row = [
             res.ticket_id,
@@ -92,6 +97,8 @@ def evaluate_all() -> None:
             amount_str,
             human_str,
             conf_str,
+            rule_str,
+            override_str,
             reason_short,
         ]
         print(f"| {' | '.join(row)} |")

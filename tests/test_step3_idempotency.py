@@ -10,6 +10,7 @@ from app.idempotency import (
     compute_payload_hash,
 )
 from app.schemas import (
+    AuditTrace,
     RefundDecision,
     SeverityLevel,
     TicketInput,
@@ -53,6 +54,15 @@ def t1001_response():
         reply_draft="We have processed a full refund of Rs 249 for your unused renewal.",
         needs_human=False,
         confidence=0.96,
+        audit_trace=AuditTrace(
+            trace_id="tr_T-1001_091a4158",
+            execution_mode="replay",
+            llm_attempts=1,
+            llm_suggested_refund=True,
+            money_gate_override=False,
+            policy_rule_id="RULE_07_UNUSED_48H_AUTO_APPROVE",
+            security_flags=[],
+        ),
     )
 
 

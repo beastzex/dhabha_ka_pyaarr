@@ -15,6 +15,7 @@ from app.logger import (
     scrub_pii,
 )
 from app.schemas import (
+    AuditTrace,
     DhabaTicketsFile,
     LLMTriageDraft,
     Purchase,
@@ -71,6 +72,15 @@ def test_invalid_category_fails_validation():
             reply_draft="Hello",
             needs_human=False,
             confidence=0.9,
+            audit_trace=AuditTrace(
+                trace_id="tr_T-1001_test",
+                execution_mode="replay",
+                llm_attempts=1,
+                llm_suggested_refund=False,
+                money_gate_override=False,
+                policy_rule_id="RULE_00_NO_REFUND_NEEDED",
+                security_flags=[],
+            ),
         )
 
 
@@ -118,6 +128,15 @@ def test_confidence_range_validation():
             reply_draft="Hello",
             needs_human=False,
             confidence=1.5,  # Exceeds 1.0
+            audit_trace=AuditTrace(
+                trace_id="tr_T-1001_test",
+                execution_mode="replay",
+                llm_attempts=1,
+                llm_suggested_refund=False,
+                money_gate_override=False,
+                policy_rule_id="RULE_00_NO_REFUND_NEEDED",
+                security_flags=[],
+            ),
         )
 
     with pytest.raises(ValidationError):

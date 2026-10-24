@@ -93,6 +93,8 @@ def triage_ticket(ticket: TicketInput, response: Response) -> TriageResponse:
                 ticket.id,
                 category=existing_response.category.value,
                 refund_approved=existing_response.refund.approved,
+                trace_id=existing_response.audit_trace.trace_id,
+                policy_rule_id=existing_response.audit_trace.policy_rule_id,
             )
             return existing_response
     except IdempotencyConflictError as conflict_err:
@@ -120,6 +122,8 @@ def triage_ticket(ticket: TicketInput, response: Response) -> TriageResponse:
         refund_amount_inr=final_response.refund.amount_inr,
         needs_human=final_response.needs_human,
         confidence=final_response.confidence,
+        trace_id=final_response.audit_trace.trace_id,
+        policy_rule_id=final_response.audit_trace.policy_rule_id,
     )
 
     # Step 7: Return final result with replay header
