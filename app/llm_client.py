@@ -155,7 +155,7 @@ Classify this ticket according to the required JSON schema. Rely on <verified_bi
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
         )
         completion = client.chat.completions.create(
-            model="gemini-1.5-flash",
+            model=settings.GEMINI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -174,7 +174,7 @@ Classify this ticket according to the required JSON schema. Rely on <verified_bi
             "content-type": "application/json",
         }
         payload = {
-            "model": "claude-3-5-sonnet-20241022",
+            "model": settings.ANTHROPIC_MODEL,
             "max_tokens": 1024,
             "system": system_prompt,
             "messages": [{"role": "user", "content": user_prompt}],
@@ -195,7 +195,7 @@ Classify this ticket according to the required JSON schema. Rely on <verified_bi
 
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
         completion = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
