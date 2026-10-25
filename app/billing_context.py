@@ -131,17 +131,20 @@ def compute_billing_facts(ticket: TicketInput) -> BillingFactSheet:
         all_renewals and all_renewals[0].status == PurchaseStatus.INITIATED
     )
 
-    # Detect false double charge: 1 failed renewal and 1 successful renewal on the same calendar day
+    # Detect false double charge: failed attempt within 24 hours of successful renewal
     has_false_double_charge_pattern = False
-    failed_dates = {
-        p.at.date() for p in all_renewals if p.status == PurchaseStatus.FAILED
-    }
-    success_dates = {
-        p.at.date() for p in all_renewals if p.status == PurchaseStatus.SUCCESSFUL
-    }
+    failed_renewals = [p for p in all_renewals if p.status == PurchaseStatus.FAILED]
+    successful_renewals = [p for p in all_renewals if p.status == PurchaseStatus.SUCCESSFUL]
 
-    if failed_dates.intersection(success_dates) and settled_renewal_count <= 1:
-        has_false_double_charge_pattern = True
+    if settled_renewal_count <= 1:
+        for failed in failed_renewals:
+            for succ in successful_renewals:
+                # Check if the attempts occurred within 24 hours (86,400s), handling midnight crossing
+                if abs((succ.at - failed.at).total_seconds()) <= 86400:
+                    has_false_double_charge_pattern = True
+                    break
+            if has_false_double_charge_pattern:
+                break
 
     return BillingFactSheet(
         total_settled_inr=total_settled_inr,

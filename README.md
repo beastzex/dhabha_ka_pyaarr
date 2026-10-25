@@ -3,7 +3,7 @@
 > **Propel — Full-Stack AI Engineer Assignment**  
 > An automated, PII-safe support ticket triage pipeline built for **Dhaba** (practice subscription food app). Designed with strict defense-in-depth: the LLM never controls money decisions, prompt injections are neutralized, logs scrub Indian PII, and every triage action is cryptographically idempotent.
 
-[![CI](https://img.shields.io/badge/tests-41%20passed-brightgreen.svg)]()
+[![CI](https://img.shields.io/badge/tests-43%20passed-brightgreen.svg)]()
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)]()
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-teal.svg)]()
 [![Pydantic v2](https://img.shields.io/badge/Pydantic-v2.6+-red.svg)]()
@@ -55,7 +55,7 @@ pip install -r requirements.txt
 ### B. Run Verification & Evaluation
 
 ```bash
-# Run complete test suite (41 unit, security, and e2e integration tests)
+# Run complete test suite (43 unit, security, and e2e integration tests)
 pytest -v
 
 # Run the 12-ticket evaluation script (produces benchmark table & prompt injection audit)
@@ -526,19 +526,58 @@ or log search on `trace_id: tr_T-1006_8a12bc44` instantly reveals:
 
 > *"In `app/schemas.py`, define strict Pydantic v2 models with `extra='forbid'`. Create `TicketInput` matching `dhaba_tickets.json` and `TriageResponse` for `POST /triage`. Critically: define `LLMTriageDraft` as the restricted subset schema the LLM is allowed to produce (`category`, `severity`, `user_wants_refund: bool`, `reply_draft`, `needs_human`, `confidence`, `prompt_injection_detected: bool`, `reasoning: str`). The LLM must NOT be permitted to write `refund.approved` or `refund.amount_inr` directly; money decisions must be guarded by deterministic code."*
 
-### 3. A Plausible Flaw the AI Produced & How It Was Caught
-* **The Flaw**: When implementing the corporate entity PII redactor in `app/logger.py`, the agent generated a regex lookahead to capture company names preceding GSTINs:
+### 3. Subtle Flaws the AI Produced & How They Were Caught
+
+During adversarial code review and edge-case verification, we caught three concrete flaws in the AI-generated code:
+
+#### Flaw 1: Overfitted Double-Charge Keyword Matching & Financial Auto-Refund Leakage (`app/money_gate.py` & `app/billing_context.py`)
+* **What the AI Generated**:
+  In `app/money_gate.py`, the AI implemented Rule 5 for false double-charge detection with this condition:
   ```python
-  # Initial AI-generated pattern:
+  # Initial AI code:
+  if "double" in ticket.subject.lower() or "twice" in ticket.body.lower():
+      if facts.has_false_double_charge_pattern:
+          return RefundDecision(approved=False, amount_inr=0, ...)
+  ```
+  And in `app/billing_context.py`, it checked:
+  ```python
+  failed_dates = {p.at.date() for p in all_renewals if p.status == PurchaseStatus.FAILED}
+  success_dates = {p.at.date() for p in all_renewals if p.status == PurchaseStatus.SUCCESSFUL}
+  if failed_dates.intersection(success_dates) and settled_renewal_count <= 1:
+      has_false_double_charge_pattern = True
+  ```
+* **Why It Was Plausible Yet Critically Flawed**:
+  1. **Keyword Overfitting**: The AI saw `T-1009` where the subject was `"double charge"` and the body had `"twice"`. It generated an asymmetric condition checking `"double"` *only* in `subject` and `"twice"` *only* in `body`. If a user wrote `"charged twice for renewal"` in the subject, both conditions evaluated to `False`. Because the user had `app_opens_since_renewal == 0`, Rule 5 was bypassed and the code fell through to Rule 7, **falsely auto-refunding Rs 249** on an active subscription where only one charge was ever collected!
+  2. **Midnight Boundary Failure**: If an auto-retry failed at 23:55 PM (Day 1) and succeeded at 00:05 AM (Day 2), comparing `p.at.date()` yielded `{Day 1} ∩ {Day 2} = ∅`, missing retries that crossed midnight 10 minutes apart.
+* **The Fix**:
+  - Replaced the asymmetric check with `DOUBLE_CHARGE_PATTERNS` regex scanning across `f"{ticket.subject} {ticket.body}"` and checking `BILLING_DISPUTE` / `REFUND_REQUEST` categories.
+  - Rewrote `app/billing_context.py` to compare timestamps directly (`abs((succ.at - failed.at).total_seconds()) <= 86400`), safely handling midnight crossing.
+  - Added targeted regression tests in `tests/test_regression_edge_cases.py` confirming `RULE_05_FALSE_DOUBLE_CHARGE` halts payout.
+
+#### Flaw 2: Multi-line Lazy Regex Lookahead Over-Redaction (`app/logger.py`)
+* **What the AI Generated**:
+  ```python
   re.compile(r'([A-Za-z0-9\s&.\'-]+?)(?=\s*,\s*\d{2}[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b)')
   ```
-* **How It Failed**: Because `\s` includes newlines and `.` was allowed, when given the multi-line body of ticket `T-1010`:
+* **How It Failed**:
+  Because `\s` includes newlines and `.` was allowed, when given ticket `T-1010`'s multi-line text:
   `"please share gst invoice for my annual payment, need it for reimbursement. company name and gstin below.\nAcme Interiors, 29ABCDE1234F1Z5"`
-  the unanchored lazy regex matched from the first comma of the previous sentence (`" need it for reimbursement. company name and gstin below.\nAcme Interiors"`), redacting half the sentence into `"[REDACTED_ENTITY], [REDACTED_GSTIN]"`.
-* **The Fix**: Caught during test execution of `tests/test_step1_foundation.py`. The regex was corrected by constraining the lookahead prefix strictly to non-comma, non-newline characters on the immediate line:
+  the unanchored lazy regex matched from the first comma of the *previous* sentence, redacting half the customer's text into `"[REDACTED_ENTITY], [REDACTED_GSTIN]"`.
+* **The Fix**:
+  Constrained the lookahead prefix strictly to non-comma, non-newline characters on the immediate line:
   ```python
   re.compile(r'([^\n,:]+?)(?=\s*,\s*\d{2}[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b)')
   ```
+
+#### Flaw 3: SQLite Connection File Descriptor Leak (`app/idempotency.py`)
+* **What the AI Generated**:
+  The AI assumed `with sqlite3.connect(...) as conn:` closed the database connection. In Python, `sqlite3.Connection.__exit__` only commits or rolls back transactions—it never closes the connection.
+* **How It Failed**:
+  Every ledger check leaked an open file handle, holding file locks on Windows and causing `sqlite3.OperationalError: database is locked` during concurrent test runs.
+* **The Fix**:
+  Refactored `_get_connection()` into a `@contextmanager` generator that deterministically executes `conn.close()` in a `finally:` block.
+
+---
 
 ### 4. Part Written Completely by Hand & Why
 * **The Component**: The financial policy engine in [`app/money_gate.py`](file:///c:/propel/dhaba-triage-service/app/money_gate.py) (specifically `evaluate_refund_policy`).

@@ -58,6 +58,20 @@ FRAUD_LEGAL_PATTERNS = [
     re.compile(r"\bfir\b", re.IGNORECASE),
 ]
 
+# Regex patterns for double charge allegations across subject and body
+DOUBLE_CHARGE_PATTERNS = [
+    re.compile(r"\bdouble\b", re.IGNORECASE),
+    re.compile(r"\btwice\b", re.IGNORECASE),
+    re.compile(r"\btwo\s+times\b", re.IGNORECASE),
+    re.compile(r"\b2\s+times\b", re.IGNORECASE),
+    re.compile(r"\bduplicate\b", re.IGNORECASE),
+    re.compile(r"\bextra\s+charge\b", re.IGNORECASE),
+    re.compile(r"\bcharged\s+again\b", re.IGNORECASE),
+    re.compile(r"\btwo\s+charges\b", re.IGNORECASE),
+    re.compile(r"\b2\s+charges\b", re.IGNORECASE),
+    re.compile(r"\bsecond\s+time\b", re.IGNORECASE),
+]
+
 # Sensitive terms forbidden in customer-facing replies
 FORBIDDEN_REPLY_TERMS = [
     re.compile(r"\bsystem\s+prompt\b", re.IGNORECASE),
@@ -187,18 +201,23 @@ def evaluate_refund_policy(
             "RULE_04_UNSETTLED_INITIATED_PAYMENT",
         )
 
-    # Rule 5: False Double-Charge Claims (e.g., T-1009: 1 failed, 1 successful)
-    if "double" in ticket.subject.lower() or "twice" in ticket.body.lower():
-        if facts.has_false_double_charge_pattern:
-            return (
-                RefundDecision(
-                    approved=False,
-                    amount_inr=0,
-                    payment_id=facts.latest_settled_renewal_id,
-                    reason="Only one successful charge found; prior attempt failed and was not settled.",
-                ),
-                "RULE_05_FALSE_DOUBLE_CHARGE",
-            )
+    # Rule 5: False Double-Charge Claims (e.g., T-1009: 1 failed attempt, 1 successful charge)
+    combined_text = f"{ticket.subject} {ticket.body}"
+    has_double_charge_mention = any(p.search(combined_text) for p in DOUBLE_CHARGE_PATTERNS)
+
+    if facts.has_false_double_charge_pattern and (
+        has_double_charge_mention
+        or llm_draft.category in (TriageCategory.BILLING_DISPUTE, TriageCategory.REFUND_REQUEST)
+    ):
+        return (
+            RefundDecision(
+                approved=False,
+                amount_inr=0,
+                payment_id=facts.latest_settled_renewal_id,
+                reason="Only one successful charge found; prior attempt failed and was not settled.",
+            ),
+            "RULE_05_FALSE_DOUBLE_CHARGE",
+        )
 
     # If no successful renewal exists at all
     if facts.settled_renewal_count == 0:

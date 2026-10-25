@@ -5,11 +5,12 @@ or duplicate refund issuances. Enforces cryptographic hash comparison on inputs 
 detect and reject payload conflicts (HTTP 409).
 """
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
 import sqlite3
-from typing import Optional
+from typing import Generator, Optional
 
 from app.config import settings
 from app.logger import log_event
@@ -49,27 +50,32 @@ class IdempotencyStore:
         self.db_path = db_path or settings.DB_PATH
         self._init_db()
 
-    def _get_connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def _get_connection(self) -> Generator[sqlite3.Connection, None, None]:
+        """Context manager yielding a SQLite connection and ensuring it is always closed."""
         conn = sqlite3.connect(self.db_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def _init_db(self) -> None:
         """Initialize the triage ledger table if it does not already exist."""
         with self._get_connection() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS triage_ledger (
-                    ticket_id TEXT PRIMARY KEY,
-                    payload_hash TEXT NOT NULL,
-                    response_json TEXT NOT NULL,
-                    refund_approved INTEGER NOT NULL,
-                    refund_amount_inr INTEGER NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-                """
-            )
-            conn.commit()
+            with conn:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS triage_ledger (
+                        ticket_id TEXT PRIMARY KEY,
+                        payload_hash TEXT NOT NULL,
+                        response_json TEXT NOT NULL,
+                        refund_approved INTEGER NOT NULL,
+                        refund_amount_inr INTEGER NOT NULL,
+                        created_at TEXT NOT NULL
+                    );
+                    """
+                )
 
     def get_existing(
         self,
@@ -126,28 +132,28 @@ class IdempotencyStore:
         response_json = response.model_dump_json()
 
         with self._get_connection() as conn:
-            cur = conn.execute(
-                """
-                INSERT OR IGNORE INTO triage_ledger (
-                    ticket_id,
-                    payload_hash,
-                    response_json,
-                    refund_approved,
-                    refund_amount_inr,
-                    created_at
-                ) VALUES (?, ?, ?, ?, ?, ?);
-                """,
-                (
-                    ticket_id,
-                    payload_hash,
-                    response_json,
-                    1 if response.refund.approved else 0,
-                    response.refund.amount_inr,
-                    created_at,
-                ),
-            )
-            conn.commit()
-            was_inserted = cur.rowcount > 0
+            with conn:
+                cur = conn.execute(
+                    """
+                    INSERT OR IGNORE INTO triage_ledger (
+                        ticket_id,
+                        payload_hash,
+                        response_json,
+                        refund_approved,
+                        refund_amount_inr,
+                        created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?);
+                    """,
+                    (
+                        ticket_id,
+                        payload_hash,
+                        response_json,
+                        1 if response.refund.approved else 0,
+                        response.refund.amount_inr,
+                        created_at,
+                    ),
+                )
+                was_inserted = cur.rowcount > 0
 
         if was_inserted:
             log_event(
