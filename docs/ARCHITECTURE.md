@@ -86,8 +86,8 @@ flowchart TD
 - **Problem**: Upstream LLM providers experience unpredictable rate limits (HTTP 429), gateway timeouts (504), and transient internal errors (500), or return truncated markdown JSON.
 - **Solution**:
   - **Automated Multi-Provider Fallback Cascade**: If the primary provider fails, the pipeline seamlessly cascades to secondary models before declaring failure:
-    1. **Google Gemini (`gemini-2.5-flash`)** — Primary fast multimodal inference.
-    2. **Anthropic Claude (`claude-3-7-sonnet-20250219`)** — 1st fallback with hybrid reasoning fidelity.
+    1. **Google Gemini (`gemini-3.8-flash`)** — Primary fast multimodal inference.
+    2. **Anthropic Claude (`claude-sonnet-4-5`)** — 1st fallback with hybrid reasoning fidelity.
     3. **OpenAI (`gpt-4o`)** — 2nd fallback for robust throughput and high intelligence.
     4. **Groq (`openai/gpt-oss-120b`)** — 3rd fallback utilizing ultra-fast 120B open-weights inference.
   - **Schema Validation & 1x Self-Correction**:

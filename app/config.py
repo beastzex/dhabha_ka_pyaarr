@@ -16,9 +16,9 @@ class Settings(BaseSettings):
     )
 
     GEMINI_API_KEY: Optional[str] = Field(default=None)
-    GEMINI_MODEL: str = Field(default="gemini-2.5-flash")
+    GEMINI_MODEL: str = Field(default="gemini-3.8-flash")
     ANTHROPIC_API_KEY: Optional[str] = Field(default=None)
-    ANTHROPIC_MODEL: str = Field(default="claude-3-7-sonnet-20250219")
+    ANTHROPIC_MODEL: str = Field(default="claude-sonnet-4-5")
     OPENAI_API_KEY: Optional[str] = Field(default=None)
     OPENAI_MODEL: str = Field(default="gpt-4o")
     GROQ_API_KEY: Optional[str] = Field(default=None)

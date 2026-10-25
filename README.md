@@ -101,10 +101,10 @@ cp .env.example .env
 
 | Provider | Priority in Cascade | How to Obtain Secret Key | Recommended Model |
 |---|---|---|---|
-| **Google Gemini** | **1. Primary** | 1. Visit [Google AI Studio](https://aistudio.google.com/)<br>2. Sign in with your Google Account<br>3. Click **"Get API key"** → **"Create API key in new project"**<br>4. Copy the key and set `GEMINI_API_KEY="AIzaSy..."` | `gemini-2.5-flash`<br>*(also supports `gemini-2.0-flash`)* |
-| **Anthropic Claude** | **2. 1st Fallback** | 1. Visit [Anthropic Console](https://console.anthropic.com/)<br>2. Sign up or log in<br>3. Navigate to **"API Keys"** → Click **"Create Key"**<br>4. Copy the key and set `ANTHROPIC_API_KEY="sk-ant-..."` | `claude-3-7-sonnet-20250219`<br>*(hybrid reasoning flagship)* |
-| **OpenAI** | **3. 2nd Fallback** | 1. Visit [OpenAI API Keys](https://platform.openai.com/api-keys)<br>2. Sign in / Create an account<br>3. Click **"+ Create new secret key"**<br>4. Copy the key and set `OPENAI_API_KEY="sk-proj-..."` | `gpt-4o`<br>*(also supports `o3-mini`)* |
-| **Groq (GPT OSS 120B)** | **4. 3rd Fallback** | 1. Visit [Groq Cloud Console](https://console.groq.com/keys)<br>2. Sign in or register<br>3. Click **"Create API Key"** and give it a name<br>4. Copy the key and set `GROQ_API_KEY="gsk_..."`<br>5. Set `GROQ_MODEL="openai/gpt-oss-120b"` | `openai/gpt-oss-120b`<br>*(ultra-fast 120B open weights)* |
+| **Google Gemini** | **1. Primary** | 1. Visit [Google AI Studio](https://aistudio.google.com/)<br>2. Sign in with your Google Account<br>3. Click **"Get API key"** → **"Create API key in new project"**<br>4. Copy the key and set `GEMINI_API_KEY="AIzaSy..."` | `gemini-3.8-flash`<br>*(Google's latest flagship multimodal agent model)* |
+| **Anthropic Claude** | **2. 1st Fallback** | 1. Visit [Anthropic Console](https://console.anthropic.com/)<br>2. Sign up or log in<br>3. Navigate to **"API Keys"** → Click **"Create Key"**<br>4. Copy the key and set `ANTHROPIC_API_KEY="sk-ant-..."` | `claude-sonnet-4-5`<br>*(Claude 4.5 Sonnet hybrid reasoning flagship)* |
+| **OpenAI** | **3. 2nd Fallback** | 1. Visit [OpenAI API Keys](https://platform.openai.com/api-keys)<br>2. Sign in / Create an account<br>3. Click **"+ Create new secret key"**<br>4. Copy the key and set `OPENAI_API_KEY="sk-proj-..."` | `gpt-4o`<br>*(also supports `gpt-4.5` / `o3-mini`)* |
+| **Groq (GPT OSS 120B)** | **4. 3rd Fallback** | 1. Visit [Groq Cloud Console](https://console.groq.com/keys)<br>2. Sign in or register<br>3. Click **"Create API Key"** and give it a name<br>4. Copy the key and set `GROQ_API_KEY="gsk_..."`<br>5. Set `GROQ_MODEL="openai/gpt-oss-120b"` | `openai/gpt-oss-120b`<br>*(ultra-fast 120B open weights on LPUs)* |
 
 #### Example `.env` Configuration:
 
@@ -114,10 +114,10 @@ TRIAGE_MODE=live
 
 # Multi-Provider Fallback Cascade (Configured with Latest Models)
 GEMINI_API_KEY=AIzaSy...your_gemini_key_here
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.8-flash
 
 ANTHROPIC_API_KEY=sk-ant-...your_claude_key_here
-ANTHROPIC_MODEL=claude-3-7-sonnet-20250219
+ANTHROPIC_MODEL=claude-sonnet-4-5
 
 OPENAI_API_KEY=sk-proj-...your_openai_key_here
 OPENAI_MODEL=gpt-4o
@@ -140,16 +140,17 @@ In production, single-LLM pipelines suffer from random outages, 429 rate limits,
 [ Incoming Verified Prompt ]
              │
              ▼
-   [ 1. Google Gemini (2.5 Flash) ] ──(Success)──► [ Validate Pydantic JSON ]
+   [ 1. Google Gemini (3.8 Flash) ] ──(Success)──► [ Validate Pydantic JSON ]
              │ (Rate Limit / Timeout / 5xx)
              ▼
-   [ 2. Anthropic Claude (3.7 Sonnet) ] ──(Success)──► [ Validate Pydantic JSON ]
+   [ 2. Anthropic Claude (Sonnet 4.5) ] ──(Success)──► [ Validate Pydantic JSON ]
              │ (Rate Limit / Timeout / 5xx)
              ▼
    [ 3. OpenAI (GPT-4o) ] ──(Success)──► [ Validate Pydantic JSON ]
              │ (Rate Limit / Timeout / 5xx)
              ▼
    [ 4. Groq (GPT OSS 120B) ] ──(Success)──► [ Validate Pydantic JSON ]
+
 
              │ (All Providers Unavailable)
              ▼
