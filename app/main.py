@@ -9,7 +9,7 @@ Exposes:
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 from fastapi import FastAPI, HTTPException, Response, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.config import settings
 from app.idempotency import (
@@ -39,6 +39,12 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.get("/", include_in_schema=False)
+def root():
+    """Redirect root path to interactive Swagger UI documentation."""
+    return RedirectResponse(url="/docs")
 
 
 @app.get("/health", tags=["System"])
