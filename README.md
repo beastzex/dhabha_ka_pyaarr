@@ -225,6 +225,18 @@ Most failures in LLM support systems do not come from the prompt itself; they ha
    - If model confidence falls below `0.75`, tentative auto-refunds are suspended and `needs_human=True` is enforced.
    - Model reply drafts are scanned to prevent regurgitation of internal prompt instructions or policy keywords.
 
+### Why We Built Two Extra Production Safeguards
+
+Beyond the baseline requirements, we introduced two dedicated architectural safeguards based on hard production lessons:
+
+1. **Why `BillingFactSheet` (`app/billing_context.py`) Was Introduced**:
+   - *The Problem*: LLMs are notoriously unreliable at multi-row ledger state arithmetic and status transitions. When presented with historical transactions spanning `initiated`, `failed`, and `successful` states (such as `pay_E1` vs `pay_E2` in `T-1005`, or `pay_I1` vs `pay_I2` in `T-1009`), raw models frequently hallucinate that pending debits are settled, or mistake failed gateway retries for double charges.
+   - *The Solution*: Computing settled vs. unsettled math in Python *before* prompting injects ground-truth accounting facts under `[BILLING REALITY FACT-SHEET]`. This eliminates arithmetic hallucinations and stops the model from lying or making false promises to users in `reply_draft`.
+
+2. **Why `AuditTrace` (`audit_trace` in `TriageResponse`) Was Introduced**:
+   - *The Problem*: When a human support supervisor or an on-call engineer at 3 AM investigates an escalation, black-box JSON outputs force tedious guesswork: Did the LLM hallucinate? Did validation fail? Did a policy gate intervene?
+   - *The Solution*: `AuditTrace` provides instantaneous decision provenance (`trace_id`, `execution_mode`, `llm_attempts`, `llm_suggested_refund`, `money_gate_override`, `policy_rule_id`, `security_flags`). At a glance, the engineer sees exactly what the model suggested versus the specific deterministic Money Gate rule (`policy_rule_id`, e.g. `RULE_06_HIGH_VALUE_HUMAN_GATE` or `RULE_01_PROMPT_INJECTION_BLOCK`) that overrode it.
+
 ---
 
 ## 3. Task 2 — Make It Not Lie
