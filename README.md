@@ -3,7 +3,7 @@
 > **Propel — Full-Stack AI Engineer Assignment**  
 > An automated, PII-safe support ticket triage pipeline built for **Dhaba** (practice subscription food app). Designed with strict defense-in-depth: the LLM never controls money decisions, prompt injections are neutralized, logs scrub Indian PII, and every triage action is cryptographically idempotent.
 
-[![CI](https://img.shields.io/badge/tests-53%20passed-brightgreen.svg)]()
+[![CI](https://img.shields.io/badge/tests-55%20passed-brightgreen.svg)]()
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)]()
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-teal.svg)]()
 [![Pydantic v2](https://img.shields.io/badge/Pydantic-v2.6+-red.svg)]()
@@ -11,7 +11,8 @@
 ---
 
 ## Table of Contents
-1. [Quick Start (Replay Mode & Live Mode)](#1-quick-start)
+1. [Setup, Installation & Secret Keys Guide](#1-setup-installation--secret-keys-guide)
+
 2. [Task 1 Architecture — The Safety Harness Around the Prompt](#2-task-1-architecture--the-safety-harness-around-the-prompt)
 3. [Task 2 — Make It Not Lie (Evaluation & Edge Cases)](#3-task-2--make-it-not-lie)
 4. [Task 3 — Backend Track (Surviving 50 Tickets/Sec During Outages)](#4-task-3--backend-track-surviving-50-ticketssecond-during-an-outage)
@@ -29,42 +30,157 @@ For extended engineering, security, and operational documentation, see the [`doc
 
 ---
 
-## 1. Quick Start
+## 1. Setup, Installation & Secret Keys Guide
 
-The service runs out-of-the-box in **Zero-API-Key Replay Mode (`TRIAGE_MODE=replay`)**, allowing evaluators to run all tests and execute the service without burning LLM tokens.
+The Dhaba Triage Service is built for immediate zero-friction evaluation and production readiness. It supports **Zero-API-Key Replay Mode** out of the box (zero cost, 100% deterministic) as well as **Live LLM Mode** with an automated multi-provider resilience cascade: `Gemini -> Claude -> OpenAI -> Groq (GPT OSS 120B)`.
 
-### A. Environment Setup
+---
+
+### A. Prerequisites & System Requirements
+- **Python**: 3.11 or higher (`python --version`)
+- **Git**: Installed and accessible on PATH (`git --version`)
+- **Operating System**: Windows 10/11, macOS, or Ubuntu/Debian Linux
+- **RAM**: Minimum 512 MB (lightweight ASGI service)
+
+---
+
+### B. Step-by-Step Installation
 
 ```bash
-# 1. Clone repository & enter directory
+# 1. Clone repository & enter project directory
 git clone https://github.com/beastzex/dhabha_ka_pyaarr.git
 cd dhabha_ka_pyaarr
 
-# 2. Create and activate virtual environment
+# 2. Create Python virtual environment
 python -m venv .venv
 
+# 3. Activate the virtual environment
 # Windows (PowerShell):
-.venv\Scripts\Activate.ps1
-# Linux/macOS:
+.\.venv\Scripts\Activate.ps1
+# Windows (Command Prompt):
+.\.venv\Scripts\activate.bat
+# Linux / macOS (bash / zsh):
 source .venv/bin/activate
 
-# 3. Install dependencies
+# 4. Install production & testing dependencies
 pip install -r requirements.txt
 ```
 
-### B. Run Verification & Evaluation
+> [!NOTE]
+> SQLite persistence (`triage_state.db`) is automatically initialized on the first request or test run. No external database servers or Docker containers are required.
+
+---
+
+### C. Execution Modes: Replay Mode vs. Live Mode
+
+The service features dual-mode execution controlled by `TRIAGE_MODE`:
+
+| Mode | `TRIAGE_MODE` | API Keys Required | Characteristics |
+|---|---|---|---|
+| **Replay Mode (Default)** | `replay` | **None (Zero Keys)** | Uses verified fixture responses in `app/fixtures/replay_responses.json`. Runs in milliseconds, zero API cost, 100% deterministic evaluation. |
+| **Live Mode** | `live` | At least 1 provider key | Dispatches prompts to live LLMs with automated fallback cascade across Gemini, Claude, OpenAI, and Groq. |
+
+> [!TIP]
+> If no API keys are provided in `.env`, the service automatically defaults to **Replay Mode**, ensuring tests and evaluation scripts always pass out of the box.
+
+---
+
+### D. How to Get and Configure Secret Keys
+
+To run in **Live LLM Mode**, create your local `.env` configuration file from the provided template:
 
 ```bash
-# Run complete test suite (53 unit, security, and e2e integration tests)
+# Windows (PowerShell):
+Copy-Item .env.example .env
+
+# Linux / macOS:
+cp .env.example .env
+```
+
+#### Step-by-Step Guide to Obtain API Keys:
+
+| Provider | Priority in Cascade | How to Obtain Secret Key | Recommended Model |
+|---|---|---|---|
+| **Google Gemini** | **1. Primary** | 1. Visit [Google AI Studio](https://aistudio.google.com/)<br>2. Sign in with your Google Account<br>3. Click **"Get API key"** → **"Create API key in new project"**<br>4. Copy the key and set `GEMINI_API_KEY="AIzaSy..."` | `gemini-1.5-flash` |
+| **Anthropic Claude** | **2. 1st Fallback** | 1. Visit [Anthropic Console](https://console.anthropic.com/)<br>2. Sign up or log in<br>3. Navigate to **"API Keys"** → Click **"Create Key"**<br>4. Copy the key and set `ANTHROPIC_API_KEY="sk-ant-..."` | `claude-3-5-sonnet-20241022` |
+| **OpenAI** | **3. 2nd Fallback** | 1. Visit [OpenAI API Keys](https://platform.openai.com/api-keys)<br>2. Sign in / Create an account<br>3. Click **"+ Create new secret key"**<br>4. Copy the key and set `OPENAI_API_KEY="sk-proj-..."` | `gpt-4o-mini` |
+| **Groq (GPT OSS 120B)** | **4. 3rd Fallback** | 1. Visit [Groq Cloud Console](https://console.groq.com/keys)<br>2. Sign in or register<br>3. Click **"Create API Key"** and give it a name<br>4. Copy the key and set `GROQ_API_KEY="gsk_..."`<br>5. Set `GROQ_MODEL="openai/gpt-oss-120b"` | `openai/gpt-oss-120b` |
+
+#### Example `.env` Configuration:
+
+```ini
+# Execution Mode (set to 'live' to invoke LLMs, or 'replay' for zero-token testing)
+TRIAGE_MODE=live
+
+# Multi-Provider Fallback Cascade
+GEMINI_API_KEY=AIzaSy...your_gemini_key_here
+ANTHROPIC_API_KEY=sk-ant-...your_claude_key_here
+OPENAI_API_KEY=sk-proj-...your_openai_key_here
+GROQ_API_KEY=gsk_...your_groq_key_here
+GROQ_MODEL=openai/gpt-oss-120b
+
+# Persistence & Policy Confidence Threshold
+DB_PATH=triage_state.db
+CONFIDENCE_THRESHOLD=0.75
+```
+
+---
+
+### E. Automated Multi-Provider Fallback Cascade Architecture
+
+In production, single-LLM pipelines suffer from random outages, 429 rate limits, and regional latency spikes. The Dhaba triage engine integrates an automated multi-provider fallback cascade:
+
+```
+[ Incoming Verified Prompt ]
+             │
+             ▼
+   [ 1. Google Gemini ] ──(Success)──► [ Validate Pydantic JSON ]
+             │ (Rate Limit / Timeout / 5xx)
+             ▼
+   [ 2. Anthropic Claude ] ──(Success)──► [ Validate Pydantic JSON ]
+             │ (Rate Limit / Timeout / 5xx)
+             ▼
+   [ 3. OpenAI GPT-4o-mini ] ──(Success)──► [ Validate Pydantic JSON ]
+             │ (Rate Limit / Timeout / 5xx)
+             ▼
+   [ 4. Groq GPT OSS 120B ] ──(Success)──► [ Validate Pydantic JSON ]
+             │ (All Providers Unavailable)
+             ▼
+   [ 5. Graceful Degraded Fallback ]
+   (needs_human=True, confidence=0.0, zero-crash guarantee)
+```
+
+- If a provider fails, the service logs `llm_provider_fallback_triggered` with diagnostic context and tries the next provider immediately.
+- If all configured live providers fail or return invalid schemas twice, the service engages `build_degraded_fallback()`: it flags `needs_human=True`, sets `confidence=0.0`, and outputs an empathic acknowledgment without crashing the API.
+
+---
+
+### F. Security & Secret Protection Guarantee
+
+> [!IMPORTANT]
+> **Zero Secrets In Version Control Guarantee:**
+> - `.env`, `*.env`, `*.key`, `*.pem`, `*.cert`, `credentials*.json`, `client_secret*.json`, and `*.db` are strictly excluded in `.gitignore`.
+> - The repository only contains `.env.example` with dummy placeholders.
+> - Automated pre-commit checks and invariant tests ensure no real API keys, secrets, or internal authorization tokens can ever be committed or pushed.
+
+---
+
+### G. Run Verification & Evaluation
+
+```bash
+# 1. Run complete automated test suite (55 unit, security, and integration tests)
 pytest -v
 
-# Run the 12-ticket evaluation script (produces benchmark table & prompt injection audit)
+# 2. Run the 12-ticket evaluation benchmark (produces markdown audit table)
 python -m scripts.evaluate_tickets
 ```
 
-### C. Start the API Server
+---
+
+### H. Start the Live API Server
 
 ```bash
+# Start FastAPI server on port 8000 with auto-reload
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -113,16 +229,6 @@ curl -X POST "http://localhost:8000/triage" \
 }
 ```
 
-### D. Switching to Live LLM Mode
-
-To run live model inference via OpenAI or Gemini:
-```bash
-# In .env or shell environment:
-export TRIAGE_MODE="live"
-export OPENAI_API_KEY="sk-..."       # Uses gpt-4o-mini
-# OR
-export GEMINI_API_KEY="AIzaSy..."    # Uses gemini-1.5-flash
-```
 
 ---
 

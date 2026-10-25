@@ -151,3 +151,78 @@ def test_extract_json_markdown_fences():
     result = extract_json_from_text(raw)
     assert result["category"] == "ACCOUNT_ISSUE"
     assert result["val"] == 123
+
+
+def test_multi_provider_fallback_cascade_gemini_to_groq(monkeypatch):
+    """
+    Verify the automated multi-provider fallback cascade:
+    Gemini -> Claude -> OpenAI -> Groq (openai/gpt-oss-120b).
+    When the first three raise exceptions, Groq is called and succeeds.
+    """
+    monkeypatch.setattr(settings, "TRIAGE_MODE", "live")
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "claude-key")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "openai-key")
+    monkeypatch.setattr(settings, "GROQ_API_KEY", "groq-key")
+    monkeypatch.setattr(settings, "GROQ_MODEL", "openai/gpt-oss-120b")
+
+    client = TriageLLMClient()
+    attempts = []
+
+    def mock_gemini(sp, up):
+        attempts.append("gemini")
+        raise RuntimeError("Gemini 429 Resource Exhausted")
+
+    def mock_claude(sp, up):
+        attempts.append("claude")
+        raise RuntimeError("Claude 503 Overloaded")
+
+    def mock_openai(sp, up):
+        attempts.append("openai")
+        raise RuntimeError("OpenAI 500 Internal Server Error")
+
+    def mock_groq(sp, up):
+        attempts.append("groq")
+        return json.dumps({
+            "category": "REFUND_REQUEST",
+            "severity": "P2_MEDIUM",
+            "user_wants_refund": True,
+            "reply_draft": "Groq GPT OSS 120B response.",
+            "needs_human": False,
+            "confidence": 0.92,
+            "prompt_injection_detected": False,
+            "reasoning": "Successfully processed by Groq fallback provider.",
+        })
+
+    monkeypatch.setattr(client, "_call_gemini", mock_gemini)
+    monkeypatch.setattr(client, "_call_claude", mock_claude)
+    monkeypatch.setattr(client, "_call_openai", mock_openai)
+    monkeypatch.setattr(client, "_call_groq", mock_groq)
+
+    result = client._call_provider("system_prompt", "user_prompt")
+    assert attempts == ["gemini", "claude", "openai", "groq"]
+    assert "Groq GPT OSS 120B" in result
+
+
+def test_groq_called_directly_if_only_groq_key_set(monkeypatch):
+    """Verify that if only GROQ_API_KEY is configured, Groq is invoked directly."""
+    monkeypatch.setattr(settings, "TRIAGE_MODE", "live")
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", None)
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(settings, "GROQ_API_KEY", "groq-secret-key")
+    monkeypatch.setattr(settings, "GROQ_MODEL", "openai/gpt-oss-120b")
+
+    client = TriageLLMClient()
+    called = []
+
+    def mock_groq(sp, up):
+        called.append(True)
+        return '{"groq": true}'
+
+    monkeypatch.setattr(client, "_call_groq", mock_groq)
+
+    res = client._call_provider("sys", "usr")
+    assert called == [True]
+    assert res == '{"groq": true}'
+

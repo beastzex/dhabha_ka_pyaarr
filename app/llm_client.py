@@ -147,56 +147,129 @@ Billing Record:
 Classify this ticket according to the required JSON schema. Rely on <verified_billing_facts> for all payment reality.
 """
 
+    def _call_gemini(self, system_prompt: str, user_prompt: str) -> str:
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=settings.GEMINI_API_KEY,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        )
+        completion = client.chat.completions.create(
+            model="gemini-1.5-flash",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.1,
+            response_format={"type": "json_object"},
+        )
+        return completion.choices[0].message.content or "{}"
+
+    def _call_claude(self, system_prompt: str, user_prompt: str) -> str:
+        import httpx
+
+        headers = {
+            "x-api-key": settings.ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+        payload = {
+            "model": "claude-3-5-sonnet-20241022",
+            "max_tokens": 1024,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user_prompt}],
+            "temperature": 0.1,
+        }
+        with httpx.Client(timeout=30.0) as client:
+            res = client.post(
+                "https://api.anthropic.com/v1/messages",
+                json=payload,
+                headers=headers,
+            )
+            res.raise_for_status()
+            data = res.json()
+            return data["content"][0]["text"]
+
+    def _call_openai(self, system_prompt: str, user_prompt: str) -> str:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.1,
+            response_format={"type": "json_object"},
+        )
+        return completion.choices[0].message.content or "{}"
+
+    def _call_groq(self, system_prompt: str, user_prompt: str) -> str:
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=settings.GROQ_API_KEY,
+            base_url="https://api.groq.com/openai/v1",
+        )
+        completion = client.chat.completions.create(
+            model=settings.GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.1,
+            response_format={"type": "json_object"},
+        )
+        return completion.choices[0].message.content or "{}"
+
     def _call_provider(self, system_prompt: str, user_prompt: str) -> str:
         """
-        Invoke the live LLM provider (OpenAI or Gemini).
-        Isolated to allow seamless mocking in unit tests.
+        Invoke the live LLM with multi-provider fallback cascade:
+        1. Gemini -> 2. Claude -> 3. OpenAI -> 4. Groq (gpt-oss-120b)
         """
+        providers = []
+        if settings.GEMINI_API_KEY:
+            providers.append(("gemini", self._call_gemini))
+        if settings.ANTHROPIC_API_KEY:
+            providers.append(("claude", self._call_claude))
         if settings.OPENAI_API_KEY:
-            from openai import OpenAI
+            providers.append(("openai", self._call_openai))
+        if settings.GROQ_API_KEY:
+            providers.append(("groq", self._call_groq))
 
-            client = OpenAI(api_key=settings.OPENAI_API_KEY)
-            completion = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.1,
-                response_format={"type": "json_object"},
-            )
-            return completion.choices[0].message.content or "{}"
+        if not providers:
+            raise RuntimeError("No LLM API key configured for live mode.")
 
-        elif settings.GEMINI_API_KEY:
-            # Using OpenAI-compatible endpoint provided by Gemini API
-            from openai import OpenAI
+        last_error = None
+        for name, fn in providers:
+            try:
+                log_event("llm_provider_attempt", "LIVE", provider=name)
+                return fn(system_prompt, user_prompt)
+            except Exception as e:
+                last_error = e
+                log_event(
+                    "llm_provider_fallback_triggered",
+                    "LIVE",
+                    failed_provider=name,
+                    error=str(e),
+                )
+                continue
 
-            client = OpenAI(
-                api_key=settings.GEMINI_API_KEY,
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            )
-            completion = client.chat.completions.create(
-                model="gemini-1.5-flash",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.1,
-                response_format={"type": "json_object"},
-            )
-            return completion.choices[0].message.content or "{}"
-
-        raise RuntimeError("No LLM API key configured for live mode.")
+        raise RuntimeError(f"All configured LLM providers failed. Last error: {last_error}")
 
     def triage_ticket(self, ticket: TicketInput) -> LLMTriageDraft:
         """
         Triage a ticket with replay handling, schema validation, retry, and graceful degradation.
         """
         # 1. Check if operating in Replay Mode
-        use_replay = (
-            settings.TRIAGE_MODE == "replay"
-            or (not settings.GEMINI_API_KEY and not settings.OPENAI_API_KEY)
+        has_any_key = bool(
+            settings.GEMINI_API_KEY
+            or settings.ANTHROPIC_API_KEY
+            or settings.OPENAI_API_KEY
+            or settings.GROQ_API_KEY
         )
+        use_replay = settings.TRIAGE_MODE == "replay" or not has_any_key
 
         if use_replay:
             fixtures = self._load_fixtures()

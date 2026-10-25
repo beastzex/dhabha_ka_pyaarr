@@ -21,11 +21,26 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environments
+# Virtual Environments & Environment Config
 .env
-.venv
+.env.*
+!.env.example
+*.env
 venv/
+.venv/
 ENV/
+env/
+
+# Security, Certificates & API Keys
+*.key
+*.pem
+*.crt
+*.cert
+*.pfx
+*.token
+credentials*.json
+client_secret*.json
+secrets*.json
 
 # Testing & Linting
 .pytest_cache/
@@ -34,7 +49,10 @@ htmlcov/
 
 # Database & SQLite
 *.db
+*.sqlite
 *.sqlite3
+*.db-journal
+*.db-wal
 
 # OS Specific
 .DS_Store
@@ -42,3 +60,4 @@ Thumbs.db
 
 # Confidential Assignment Materials
 Propel_Full_Stack_AI_Engineer_Assignment.pdf
+

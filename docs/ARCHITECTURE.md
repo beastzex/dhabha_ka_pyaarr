@@ -82,17 +82,25 @@ flowchart TD
     - **Different Hash**: Raises an `IdempotencyConflictError`, returning an instant **HTTP 409 Conflict**.
   - Concurrency is managed via `INSERT OR IGNORE` transactions.
 
-### Invariant 4: Schema Validation Loop & Graceful Degradation
-- **Problem**: LLMs occasionally return markdown-wrapped JSON, truncated strings, or invented enum categories.
+### Invariant 4: Schema Validation Loop, Multi-Provider Cascade & Graceful Degradation
+- **Problem**: Upstream LLM providers experience unpredictable rate limits (HTTP 429), gateway timeouts (504), and transient internal errors (500), or return truncated markdown JSON.
 - **Solution**:
-  - `Attempt 1`: Strips markdown fences, parses JSON, and runs `LLMTriageDraft.model_validate()`.
-  - `Attempt 2`: If validation fails, appends the exact Pydantic error trace to the prompt and retries once.
-  - `Fallback`: If Attempt 2 fails or the upstream provider times out, `build_degraded_fallback()` returns a safe degraded object:
-    - `confidence`: `0.0`
-    - `needs_human`: `True`
-    - `user_wants_refund`: `False`
-    - Safe holding reply in customer's language.
+  - **Automated Multi-Provider Fallback Cascade**: If the primary provider fails, the pipeline seamlessly cascades to secondary models before declaring failure:
+    1. **Google Gemini (`gemini-1.5-flash`)** — Primary fast inference.
+    2. **Anthropic Claude (`claude-3-5-sonnet-20241022`)** — 1st fallback with high reasoning fidelity.
+    3. **OpenAI (`gpt-4o-mini`)** — 2nd fallback for robust throughput.
+    4. **Groq (`openai/gpt-oss-120b`)** — 3rd fallback utilizing ultra-fast open-weights inference.
+  - **Schema Validation & 1x Self-Correction**:
+    - `Attempt 1`: Strips markdown fences, parses JSON, and runs `LLMTriageDraft.model_validate()`.
+    - `Attempt 2`: If validation fails, appends the exact Pydantic error trace to the prompt and retries once.
+  - **Graceful Degradation (`build_degraded_fallback`)**:
+    - If all configured live providers fail or return invalid schemas, the service engages degraded fallback:
+      - `confidence`: `0.0`
+      - `needs_human`: `True`
+      - `user_wants_refund`: `False`
+      - Safe holding reply in customer's language.
   - **Zero 500 Errors**: Even total LLM provider outages result in valid HTTP 200 responses safely routed to human queues.
+
 
 ### Invariant 5: PII Sanitization at Log Boundaries
 - **Problem**: Support tickets contain sensitive customer data: Indian GSTINs, corporate legal names, UPI IDs, credit card numbers, and phone numbers. Dumping raw tickets into Datadog, CloudWatch, or ELK creates massive regulatory and GDPR/DPDP liabilities.
